@@ -1,0 +1,68 @@
+{
+  "precoPor1000": 35,
+  "estoque": 38900,
+  "pix": "emanuelscirino2011@gmail.com",
+  "contador": 6,
+  "pedidos": {
+    "0001": {
+      "userId": "753626582366683246",
+      "quantidade": 1000,
+      "valor": 35,
+      "canal": "1564085067020636181",
+      "status": "entregue",
+      "criadoEm": 1792977342733,
+      "entregueEm": 1792977362453,
+      "entreguePor": "1559927809638404282"
+    },
+    "0002": {
+      "userId": "1559927809638404282",
+      "quantidade": 10000,
+      "valor": 350,
+      "canal": "1564085429551112302",
+      "status": "entregue",
+      "criadoEm": 1792977429169,
+      "entregueEm": 1792977451247,
+      "entreguePor": "1559927809638404282"
+    },
+    "0003": {
+      "userId": "753626582366683246",
+      "quantidade": 9000,
+      "valor": 315,
+      "canal": "1564085684300546068",
+      "status": "cancelado",
+      "criadoEm": 1792977489931
+    },
+    "0004": {
+      "userId": "737824254867013652",
+      "quantidade": 100,
+      "valor": 3.5,
+      "canal": "1564100450226278513",
+      "metodo": "plus",
+      "usuarioRoblox": "heroigamer2258D",
+      "status": "entregue",
+      "criadoEm": 1792981010757,
+      "entregueEm": 1792981033469,
+      "entreguePor": "753626582366683246"
+    },
+    "0005": {
+      "userId": "753626582366683246",
+      "quantidade": 1000,
+      "valor": 35,
+      "canal": "1564265803405332501",
+      "metodo": "plus",
+      "usuarioRoblox": "aaaa2322",
+      "status": "cancelado",
+      "criadoEm": 1793020428663
+    },
+    "0006": {
+      "userId": "753626582366683246",
+      "quantidade": 1000,
+      "valor": 35,
+      "canal": "1564266164933238844",
+      "metodo": "plus",
+      "usuarioRoblox": "23232323",
+      "status": "cancelado",
+      "criadoEm": 1793020514971
+    }
+  }
+}
