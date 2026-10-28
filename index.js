@@ -1417,7 +1417,7 @@ client.on('interactionCreate', async (interaction) => {
           value: 
             `• ${robuxDisplay} **400 Robux** ── ${emojiPix} **R$ 14,00** *(Pedido Mínimo)*\n` +
             `• ${robuxDisplay} **800 Robux** ── ${emojiPix} **R$ 28,00**\n` +
-            `• ${robuxDisplay} **1.000 Robux** ── ${emojiPix} **R$ 35,00**\n` +
+            `• ${robuxDisplay} **1.000 Robux** ── ${emojiPix} **R$ 35,00** *(Recomendado)*\n` +
             `• ${robuxDisplay} **2.000 Robux** ── ${emojiPix} **R$ 70,00**\n` +
             `• ${robuxDisplay} **5.000 Robux** ── ${emojiPix} **R$ 175,00**\n` +
             `• ${robuxDisplay} **10.000 Robux** ── ${emojiPix} **R$ 350,00**\n\n` +
