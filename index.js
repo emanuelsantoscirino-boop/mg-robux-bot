@@ -1364,32 +1364,42 @@ async function handleModal(i) {
     }
   }
 }
-// Registar o comando /tabela instantaneamente no teu servidor
+// Registra o comando /tabela apenas no seu servidor (Guild)
 client.once('ready', async () => {
   try {
     const GUILD_ID = '1563680185994322033'; 
 
+    // Limpa comandos globais antigos para evitar duplicidade de /tabela
+    await client.application?.commands.set([]);
+
     const guild = await client.guilds.fetch(GUILD_ID);
-    await guild.commands.create({
-      name: 'tabela',
-      description: 'Envia a tabela de preços de Robux no canal'
-    });
-    console.log('Comando /tabela registrado instantaneamente no servidor!');
+    if (guild) {
+      // Registra apenas no seu servidor
+      await guild.commands.set([
+        {
+          name: 'tabela',
+          description: 'Envia a tabela de preços de Robux no canal'
+        }
+      ]);
+      console.log('✅ Comando /tabela sincronizado e pronto no servidor!');
+    }
   } catch (err) {
-    console.error('Erro ao registrar comando /tabela:', err);
+    console.error('❌ Erro ao registrar comando /tabela:', err);
   }
 });
 
-// Responder quando o comando /tabela for executado
+// Responde quando o comando /tabela for executado
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'tabela') {
+    // Adiciona o deferReply para evitar o erro "O aplicativo não respondeu"
+    await interaction.deferReply().catch(() => {});
+
     // Verifica se o usuário é Administrador
     if (!interaction.member.permissions.has('Administrator')) {
-      return interaction.reply({
-        content: '❌ Apenas administradores podem usar este comando.',
-        ephemeral: true
+      return interaction.editReply({
+        content: '❌ Apenas administradores podem usar este comando.'
       });
     }
 
@@ -1400,7 +1410,7 @@ client.on('interactionCreate', async (interaction) => {
     const emojiMoney = interaction.guild.emojis.cache.find(e => e.name === 'Money') || '💵';
 
     const embedTabela = {
-      color: 0x2ecc71, // Cor verde da barra lateral (estilo do seu print)
+      color: 0x2ecc71,
       title: `${emojiRoblox} MG ROBUX — TABELA DE PREÇOS`,
       description: `> ${emojiMoney} **Valor base:** **R$ 35,00** a cada **1.000 Robux**!\n> ⚠️ **Pedido mínimo:** **400 Robux**`,
       fields: [
@@ -1431,10 +1441,17 @@ client.on('interactionCreate', async (interaction) => {
       }
     };
 
-    // Envia o Embed com o banner anexado no rodapé do mesmo card
-    await interaction.reply({
+    // Envia o embed com o banner
+    await interaction.editReply({
       embeds: [embedTabela],
       files: ['./banner.png']
     });
   }
 });
+
+iniciarBanco()
+  .then(() => client.login(process.env.TOKEN))
+  .catch((e) => {
+    console.error('Falha ao iniciar:', e.message);
+    process.exit(1);
+  });
