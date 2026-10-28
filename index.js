@@ -1364,7 +1364,7 @@ async function handleModal(i) {
     }
   }
 }
-// Registar o comando /tabela instantaneamente no seu servidor
+// Registar o comando /tabela instantaneamente no teu servidor
 client.once('ready', async () => {
   try {
     const GUILD_ID = '1563680185994322033'; 
@@ -1385,7 +1385,7 @@ client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'tabela') {
-    // Verifica se o usuário é Administrador
+    // Verifica se o utilizador é Administrador
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({
         content: '❌ Apenas administradores podem usar este comando.',
@@ -1393,38 +1393,43 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    const tabela = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# :Roblox: TABELA DE PREÇOS — ROBUX :Robux:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Busca os emojis diretamente no servidor pelo nome
+    const emojiRobux = interaction.guild.emojis.cache.find(e => e.name === 'Robux') || '🪙';
+    const emojiPix = interaction.guild.emojis.cache.find(e => e.name === 'Pix' || e.name === 'pix2') || '💎';
+    const emojiRoblox = interaction.guild.emojis.cache.find(e => e.name === 'Roblox') || '🎮';
+    const emojiMoney = interaction.guild.emojis.cache.find(e => e.name === 'Money') || '💵';
 
-> :Money: **Valor base:** **R$ 35,00** a cada **1.000 Robux**!
-> ⚠️ **Pedido mínimo:** **400 Robux**
+    const embedTabela = {
+      color: 0x2ecc71, // Cor verde da barra lateral (estilo do teu print)
+      title: `${emojiRoblox} TABELA DE PREÇOS — ROBUX`,
+      description: `> ${emojiMoney} **Valor base:** **R$ 35,00** a cada **1.000 Robux**!\n> ⚠️ **Pedido mínimo:** **400 Robux**`,
+      fields: [
+        {
+          name: '📊 Tabela de Valores',
+          value: 
+            `• ${emojiRobux} **400 Robux** ── ${emojiPix} **R$ 14,00** *(Pedido Mínimo)*\n` +
+            `• ${emojiRobux} **800 Robux** ── ${emojiPix} **R$ 28,00**\n` +
+            `• ${emojiRobux} **1.000 Robux** ── ${emojiPix} **R$ 35,00**\n` +
+            `• ${emojiRobux} **2.000 Robux** ── ${emojiPix} **R$ 70,00**\n` +
+            `• ${emojiRobux} **5.000 Robux** ── ${emojiPix} **R$ 175,00**\n` +
+            `• ${emojiRobux} **10.000 Robux** ── ${emojiPix} **R$ 350,00**\n\n` +
+            `🧮 *Quer outra quantidade? Calculamos proporcionalmente (R$ 0,035 por Robux).*`
+        },
+        {
+          name: '🛒 Como Comprar?',
+          value: 
+            `1️⃣ Vá até o canal de tickets\n` +
+            `2️⃣ Abra um ticket de atendimento\n` +
+            `3️⃣ Digite a quantidade de ${emojiRobux} que deseja e faça o pagamento via ${emojiPix}!`
+        }
+      ],
+      footer: {
+        text: '⚡ Entrega rápida e 100% segura no seu Roblox'
+      }
+    };
 
----
-
-### 📊 Tabela de Valores
-
-• :Robux: **400 Robux** ── :Pix: **R$ 14,00** *(Pedido Mínimo)*
-• :Robux: **800 Robux** ── :Pix: **R$ 28,00**
-• :Robux: **1.000 Robux** ── :Pix: **R$ 35,00**
-• :Robux: **2.000 Robux** ── :Pix: **R$ 70,00**
-• :Robux: **5.000 Robux** ── :Pix: **R$ 175,00**
-• :Robux: **10.000 Robux** ── :Pix: **R$ 350,00**
-
-> 🧮 *Quer outra quantidade? Calculamos proporcionalmente (R$ 0,035 por Robux).*
-
----
-
-### 🛒 Como Comprar?
-
-1️⃣ Vá até o canal de tickets
-2️⃣ Abra um ticket de atendimento
-3️⃣ Digite a quantidade de :Robux: que deseja e faça o pagamento via :Pix:!
-
----
-⚡ *Entrega rápida e 100% segura no seu :Roblox:*`;
-
-    await interaction.reply({ content: tabela });
+    // Envia a mensagem formatada como Embed
+    await interaction.reply({ embeds: [embedTabela] });
   }
 });
 
