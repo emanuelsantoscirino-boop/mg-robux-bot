@@ -1364,6 +1364,46 @@ async function handleModal(i) {
     }
   }
 }
+// COMANDO TABELA DE PREÇOS (NÃO ALTERA NADA DO SEU CÓDIGO)
+client.on('messageCreate', async (message) => {
+  if (message.content === '!enviartabela') {
+    if (!message.member.permissions.has('Administrator')) return;
+    
+const tabela = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# :Roblox: TABELA DE PREÇOS — ROBUX :Robux:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+> :Money: **Valor base:** **R$ 35,00** a cada **1.000 Robux**!
+> ⚠️ **Pedido mínimo:** **400 Robux**
+
+---
+
+### 📊 Tabela de Valores
+
+• :Robux: **400 Robux** ── :Pix: **R$ 14,00** *(Pedido Mínimo)*
+• :Robux: **800 Robux** ── :Pix: **R$ 28,00**
+• :Robux: **1.000 Robux** ── :Pix: **R$ 35,00**
+• :Robux: **2.000 Robux** ── :Pix: **R$ 70,00**
+• :Robux: **5.000 Robux** ── :Pix: **R$ 175,00**
+• :Robux: **10.000 Robux** ── :Pix: **R$ 350,00**
+
+> 🧮 *Quer outra quantidade? Calculamos proporcionalmente (R$ 0,035 por Robux).*
+
+---
+
+### 🛒 Como Comprar?
+
+1️⃣ Vá até o canal de tickets
+2️⃣ Abra um ticket de atendimento
+3️⃣ Digite a quantidade de :Robux: que deseja e faça o pagamento via :Pix:!
+
+---
+⚡ *Entrega rápida e 100% segura no seu :Roblox:*`;
+
+    await message.delete().catch(() => {});
+    await message.channel.send(tabela);
+  }
+});
 
 iniciarBanco()
   .then(() => client.login(process.env.TOKEN))
