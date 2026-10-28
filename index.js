@@ -220,6 +220,72 @@ const agora = () => `<t:${Math.floor(Date.now() / 1000)}:f>`;
 const precoPor1000 = (d, metodo) =>
   metodo === 'plus' && typeof d.precoPlusPor1000 === 'number' ? d.precoPlusPor1000 : d.precoPor1000;
 
+// ---------- MENSAGENS EFÊMERAS (só o cliente vê) ----------
+// Cada mensagem dessas some sozinha depois de um tempo, e também some quando a pessoa
+// abre outra coisa no painel. Assim o painel principal fica sempre fácil de achar.
+// (O Discord só deixa apagar essas mensagens nos primeiros 15 minutos.)
+const TEMPO_MENU = 2 * 60 * 1000;   // menu "Forma de entrega" (cliente precisa de tempo para escolher)
+const TEMPO_INFO = 60 * 1000;       // preços, cálculo de gamepass
+const TEMPO_AVISO = 30 * 1000;      // "Seu ticket foi criado" e avisos de erro
+
+const efemeras = new Map(); // userId -> { i, timer }
+
+function esquecerEfemera(userId) {
+  const x = efemeras.get(userId);
+  if (x) { clearTimeout(x.timer); efemeras.delete(userId); }
+  return x;
+}
+
+function apagarEfemera(userId) {
+  const x = esquecerEfemera(userId);
+  if (x) x.i.deleteReply().catch(() => {});
+}
+
+// Marca a mensagem atual da pessoa para sumir daqui a "ms".
+function agendarEfemera(i, ms) {
+  const userId = i.user.id;
+  esquecerEfemera(userId);
+  const timer = setTimeout(() => {
+    const atual = efemeras.get(userId);
+    if (atual && atual.i === i) efemeras.delete(userId);
+    i.deleteReply().catch(() => {});
+  }, ms);
+  efemeras.set(userId, { i, timer });
+}
+
+// Envia uma mensagem efêmera nova, apagando a anterior da mesma pessoa.
+async function responderEfemera(i, payload, ms = TEMPO_INFO) {
+  apagarEfemera(i.user.id);
+  await i.reply({ ...payload, flags: ephemeral });
+  agendarEfemera(i, ms);
+}
+
+// O formulário de compra é aberto a partir da mensagem efêmera "Forma de entrega".
+const veioDeEfemera = (i) => i.isFromMessage() && i.message.flags.has(MessageFlags.Ephemeral);
+
+// Mostra um erro de formulário. Se veio da mensagem "Forma de entrega", mostra o aviso nela mesma
+// (com os botões de volta) em vez de criar mais uma mensagem.
+async function erroModal(i, texto) {
+  if (veioDeEfemera(i)) {
+    await i.update({ content: `⚠️ ${texto}`, embeds: [escolhaMetodoEmbed()], components: [escolhaMetodoBotoes()] });
+    agendarEfemera(i, TEMPO_MENU);
+    return;
+  }
+  return responderEfemera(i, { content: texto }, TEMPO_AVISO);
+}
+
+// Dá mais tempo para a mensagem atual da pessoa (ex.: enquanto ela preenche o formulário).
+function prolongarEfemera(userId, ms) {
+  const x = efemeras.get(userId);
+  if (x) agendarEfemera(x.i, ms);
+}
+
+// Edita a resposta atual com um texto final (ticket criado / erro) e agenda a remoção.
+async function finalizarEfemera(i, texto) {
+  await i.editReply({ content: texto, embeds: [], components: [] });
+  agendarEfemera(i, TEMPO_AVISO);
+}
+
 // ---------- CUPONS ----------
 // d.cupons = { CODIGO: { tipo: 'percentual' | 'fixo', valor, usosMax (0 = ilimitado), usos, expiraEm, criadoPor, criadoEm } }
 const VALOR_MINIMO_PIX = 1; // o Pix nunca fica abaixo de R$ 1,00
@@ -878,11 +944,11 @@ async function entregarPedido(id, staffId) {
         `<@${p.userId}>, seu pedido de ${comEmoji('ROBUX', `**${p.quantidade.toLocaleString('pt-BR')} Robux**`)} foi concluído.\n` +
         `> ${detalhe}\n\n` +
         `Obrigado pela compra.${cargoDado ? `\nVocê recebeu o cargo <@&${process.env.CLIENTE_ROLE}>.` : ''}\n\n` +
-        '-# Este canal será apagado em 1 minuto.'
+        '-# Este canal será apagado em 30 segundos.'
       )
       .setFooter({ text: `${NOME_LOJA}  |  Pedido #${id}` });
     await canal.send({ content: `<@${p.userId}>`, embeds: [embed] });
-    setTimeout(() => canal.delete().catch(() => {}), 60_000);
+    setTimeout(() => canal.delete().catch(() => {}), 30_000);
   }
   return { ok: true, msg: `Pedido #${id} marcado como entregue.` };
 }
@@ -1040,9 +1106,8 @@ async function handleCommand(i) {
 
   if (i.commandName === 'gamepass') {
     const q = i.options.getInteger('quantidade');
-    return i.reply({
-      content: `Para receber **${q}** Robux líquidos, crie o gamepass por **${precoGamepass(q)}** Robux.`,
-      flags: ephemeral
+    return responderEfemera(i, {
+      content: `Para receber **${q}** Robux líquidos, crie o gamepass por **${precoGamepass(q)}** Robux.`
     });
   }
 
@@ -1155,15 +1220,16 @@ async function handleButton(i) {
 
   if (acao === 'painel') {
     if (id === 'comprar') {
-      return i.reply({ embeds: [escolhaMetodoEmbed()], components: [escolhaMetodoBotoes()], flags: ephemeral });
+      return responderEfemera(i, { embeds: [escolhaMetodoEmbed()], components: [escolhaMetodoBotoes()] }, TEMPO_MENU);
     }
     if (id === 'gamepass') return i.showModal(modalGamepass());
-    if (id === 'precos') return i.reply({ embeds: [catalogoEmbed(db())], flags: ephemeral });
+    if (id === 'precos') return responderEfemera(i, { embeds: [catalogoEmbed(db())] });
     return;
   }
 
   if (acao === 'metodo') {
     if (!METODOS[id]) return;
+    prolongarEfemera(i.user.id, 5 * 60 * 1000); // não deixa o menu sumir enquanto o formulário está aberto
     return i.showModal(modalCompra(id));
   }
 
@@ -1234,13 +1300,12 @@ async function handleModal(i) {
   const q = lerNumero(i.fields.getTextInputValue('quantidade'));
 
   if (!Number.isInteger(q) || q < 1) {
-    return i.reply({ content: 'Digite um número inteiro. Exemplo: 1000', flags: ephemeral });
+    return erroModal(i, 'Digite um número inteiro. Exemplo: 1000');
   }
 
   if (tipo === 'modal_gamepass') {
-    return i.reply({
-      content: `Para receber **${q.toLocaleString('pt-BR')}** Robux líquidos, crie o gamepass por **${precoGamepass(q).toLocaleString('pt-BR')}** Robux.`,
-      flags: ephemeral
+    return responderEfemera(i, {
+      content: `Para receber **${q.toLocaleString('pt-BR')}** Robux líquidos, crie o gamepass por **${precoGamepass(q).toLocaleString('pt-BR')}** Robux.`
     });
   }
 
@@ -1248,26 +1313,20 @@ async function handleModal(i) {
     if (!METODOS[metodo]) return;
 
     if (q < PEDIDO_MINIMO) {
-      return i.reply({ content: `O pedido mínimo é de ${PEDIDO_MINIMO} Robux.`, flags: ephemeral });
+      return erroModal(i, `O pedido mínimo é de ${PEDIDO_MINIMO} Robux.`);
     }
     if (metodo === 'plus' && q > LIMITE_PLUS) {
-      return i.reply({
-        content: `O Roblox Plus tem limite diário de envio de **${LIMITE_PLUS} Robux**. Peça até ${LIMITE_PLUS} Robux ou escolha a entrega via **Gamepass** para quantidades maiores.`,
-        flags: ephemeral
-      });
+      return erroModal(i, `O Roblox Plus tem limite diário de envio de **${LIMITE_PLUS} Robux**. Peça até ${LIMITE_PLUS} Robux ou escolha a entrega via **Gamepass** para quantidades maiores.`);
     }
     if (q > d.estoque) {
-      return i.reply({ content: `Estoque insuficiente. Disponível: ${d.estoque.toLocaleString('pt-BR')} Robux.`, flags: ephemeral });
+      return erroModal(i, `Estoque insuficiente. Disponível: ${d.estoque.toLocaleString('pt-BR')} Robux.`);
     }
 
     let usuario = null;
     if (metodo === 'plus') {
       usuario = i.fields.getTextInputValue('usuario').trim();
       if (!/^[A-Za-z0-9_]{3,20}$/.test(usuario)) {
-        return i.reply({
-          content: 'Nome de usuário inválido. Use apenas letras, números e underline (3 a 20 caracteres).',
-          flags: ephemeral
-        });
+        return erroModal(i, 'Nome de usuário inválido. Use apenas letras, números e underline (3 a 20 caracteres).');
       }
     }
 
@@ -1276,26 +1335,32 @@ async function handleModal(i) {
     const cupom = normalizarCupom(cupomTxt);
     if (cupom) {
       const v = validarCupom(d, cupom);
-      if (!v.ok) return i.reply({ content: v.msg, flags: ephemeral });
+      if (!v.ok) return erroModal(i, v.msg);
     }
 
     const aberto = Object.values(d.pedidos).find(
       p => p.userId === i.user.id && ['aguardando_pagamento', 'aguardando_confirmacao', 'pago'].includes(p.status)
     );
     if (aberto) {
-      return i.reply({ content: `Você já possui um pedido em aberto: <#${aberto.canal}>`, flags: ephemeral });
+      return erroModal(i, `Você já possui um pedido em aberto: <#${aberto.canal}>`);
     }
 
-    await i.deferReply({ flags: ephemeral });
+    // Troca a mensagem "Forma de entrega" (só o cliente vê) por um aviso curto,
+    // que depois vira o link do ticket.
+    if (veioDeEfemera(i)) {
+      await i.update({ content: 'Criando o seu ticket...', embeds: [], components: [] });
+    } else {
+      await i.deferReply({ flags: ephemeral });
+    }
     try {
       const canal = await criarTicket(i, q, metodo, usuario, cupom || null);
-      return i.editReply(`Seu ticket foi criado: ${canal}`);
+      return finalizarEfemera(i, `Seu ticket foi criado: ${canal}`);
     } catch (err) {
       if (String(err.message).startsWith('CUPOM:')) {
-        return i.editReply(err.message.slice(6));
+        return finalizarEfemera(i, err.message.slice(6));
       }
       console.error('Erro ao criar o ticket:', err);
-      return i.editReply('Não foi possível gerar o seu Pix agora. Tente de novo em instantes ou avise a equipe.');
+      return finalizarEfemera(i, 'Não foi possível gerar o seu Pix agora. Tente de novo em instantes ou avise a equipe.');
     }
   }
 }
