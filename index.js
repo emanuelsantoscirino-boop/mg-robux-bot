@@ -1364,14 +1364,17 @@ async function handleModal(i) {
     }
   }
 }
-// Registar o comando /tabela assim que o bot fica online
+// Registar o comando /tabela instantaneamente no seu servidor
 client.once('ready', async () => {
   try {
-    await client.application?.commands.create({
+    const GUILD_ID = '1563680185994322033'; 
+
+    const guild = await client.guilds.fetch(GUILD_ID);
+    await guild.commands.create({
       name: 'tabela',
       description: 'Envia a tabela de preços de Robux no canal'
     });
-    console.log('Comando /tabela registrado com sucesso!');
+    console.log('Comando /tabela registrado instantaneamente no servidor!');
   } catch (err) {
     console.error('Erro ao registrar comando /tabela:', err);
   }
@@ -1382,7 +1385,7 @@ client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'tabela') {
-    // Verifica se o utilizador é Administrador
+    // Verifica se o usuário é Administrador
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({
         content: '❌ Apenas administradores podem usar este comando.',
