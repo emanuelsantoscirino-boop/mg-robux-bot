@@ -267,12 +267,12 @@ function painelEmbeds(d, temBanner) {
     { name: '🚀  FORMAS DE ENTREGA', value: VAZIO, inline: false },
     {
       name: `${PL}  Roblox Plus`,
-      value: `**${reais(plus)}** / 1.000\n-# ✨ Recomendado\n-# ⚠️ Limite de ${LIMITE_PLUS} Robux por dia`,
+      value: `✨ **Envio direto**\n> Sem taxa de transação\n-# ⚠️ Limite de ${LIMITE_PLUS} Robux/dia`,
       inline: true
     },
     {
       name: '🎟️  Gamepass',
-      value: `**${reais(gp)}** / 1.000\n-# Taxa de 30% inclusa`,
+      value: '🎟️ **Sem limite diário**\n> Você cria, nós compramos\n-# Taxa de 30% inclusa',
       inline: true
     },
     {
@@ -363,7 +363,7 @@ function escolhaMetodoEmbed() {
 
 function escolhaMetodoBotoes() {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('metodo:plus').setLabel('Roblox Plus (recomendado)').setEmoji(emojiBotao('PLUS', '⭐')).setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('metodo:plus').setLabel('Roblox Plus').setEmoji(emojiBotao('PLUS', '⭐')).setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('metodo:gamepass').setLabel('Gamepass').setEmoji('🎟️').setStyle(ButtonStyle.Secondary)
   );
 }
