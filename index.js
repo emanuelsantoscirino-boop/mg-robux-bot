@@ -1375,11 +1375,31 @@ client.once('ready', async () => {
     const guild = await client.guilds.fetch(GUILD_ID);
     if (guild) {
       await guild.commands.set([
-        {
-          name: 'tabela',
-          description: 'Envia a tabela de preços de Robux no canal'
-        }
-      ]);
+          {
+            name: 'tabela',
+            description: 'Envia a tabela de preços de Robux no canal'
+          },
+          {
+            name: 'painel',
+            description: 'Envia o painel de atendimento e vendas'
+          },
+          {
+            name: 'catalogo',
+            description: 'Abre o catálogo de produtos/serviços'
+          },
+          {
+            name: 'gamepass',
+            description: 'Gerencia as configurações e entregas via Gamepass'
+          },
+          {
+            name: 'config',
+            description: 'Configurações gerais do bot MG ROBUX'
+          },
+          {
+            name: 'cupom',
+            description: 'Gerencia os cupons de desconto'
+          }
+        ]);
       console.log('✅ Comando /tabela sincronizado e pronto no servidor!');
     }
   } catch (err) {
