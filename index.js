@@ -1394,7 +1394,7 @@ client.on('messageCreate', async (message) => {
 
 ### 🛒 Como Comprar?
 
-1️⃣ Vá até o canal de tickets
+1️⃣ Vá até o canal robux
 2️⃣ Abra um ticket de atendimento
 3️⃣ Digite a quantidade de :Robux: que deseja e faça o pagamento via :Pix:!
 
