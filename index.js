@@ -1,10 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-// override: true -> o arquivo .env tem prioridade sobre variáveis já existentes no sistema/host
-require('dotenv').config({
-  path: fs.existsSync('.env') ? '.env' : 'rbx.env',
-  override: true
-});
+const http = require('http');
+const crypto = require('crypto');
+
+// Variáveis do painel do Render têm prioridade. O arquivo .env/rbx.env só serve para rodar no PC.
+const arquivoEnv = fs.existsSync('.env') ? '.env' : (fs.existsSync('rbx.env') ? 'rbx.env' : null);
+if (arquivoEnv) require('dotenv').config({ path: arquivoEnv });
+
 const {
   Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder,
   ButtonStyle, ChannelType, PermissionFlagsBits, SlashCommandBuilder,
@@ -15,7 +17,6 @@ const {
 // ---------- CONFIGURAÇÃO ----------
 const CAMINHO_BANNER = path.join(__dirname, 'banner.png');
 const NOME_LOJA = 'MG ROBUX';
-// Cor da marca: mude no .env com COR_MARCA=#00b06b (hex da cor da sua logo)
 const corHex = parseInt(String(process.env.COR_MARCA || '00b06b').replace('#', ''), 16);
 const COR_MARCA = Number.isNaN(corHex) ? 0x00b06b : corHex;
 const COR_ESPERA = 0xe0a030;  // âmbar
@@ -26,17 +27,88 @@ const METODOS = {
   gamepass: 'Gamepass'
 };
 
-const obrigatorias = ['TOKEN', 'CLIENT_ID', 'GUILD_ID', 'STAFF_ROLE', 'LOG_CHANNEL'];
+const obrigatorias = ['TOKEN', 'CLIENT_ID', 'GUILD_ID', 'STAFF_ROLE', 'LOG_CHANNEL', 'SHARPIFY_CLIENT_ID', 'SHARPIFY_CLIENT_SECRET'];
 const faltando = obrigatorias.filter(v => !process.env[v]);
 if (faltando.length) {
-  console.error(`Faltando no arquivo .env: ${faltando.join(', ')}`);
+  console.error(`Faltando nas variáveis de ambiente: ${faltando.join(', ')}`);
   process.exit(1);
 }
 
+// ---------- SHARPIFY (pagamento Pix) ----------
+const SHARPIFY_URL = 'https://sharpify-pay.com';
+const sharpifyHeaders = () => ({
+  'Content-Type': 'application/json',
+  'x-sharpify-client-id': process.env.SHARPIFY_CLIENT_ID,
+  'x-sharpify-client-secret': process.env.SHARPIFY_CLIENT_SECRET
+});
+
+// Senha do webhook derivada do Client Secret (não precisa configurar nada extra).
+const WEBHOOK_SECRET = crypto.createHash('sha256').update(`wh:${process.env.SHARPIFY_CLIENT_SECRET}`).digest('hex');
+// No Render, RENDER_EXTERNAL_URL já vem pronta. Se quiser forçar outra, use PUBLIC_URL.
+const segredoConfere = (recebido) => {
+  const a = Buffer.from(String(recebido || ''));
+  const b = Buffer.from(WEBHOOK_SECRET);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
+
+const URL_BRUTA = (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+// A Sharpify recusa URL com porta explícita, localhost ou IP.
+const urlValida = (u) => {
+  try {
+    const x = new URL(u);
+    return /^https?:$/.test(x.protocol) && !x.port && x.hostname !== 'localhost'
+      && !/^\d{1,3}(\.\d{1,3}){3}$/.test(x.hostname) && !x.hostname.includes(':');
+  } catch { return false; }
+};
+const PUBLIC_URL = urlValida(URL_BRUTA) ? URL_BRUTA : '';
+if (URL_BRUTA && !PUBLIC_URL) console.warn(`URL pública inválida para a Sharpify (${URL_BRUTA}). Use https://dominio, sem porta e sem IP.`);
+
+async function criarPagamento(id, valor, quantidade) {
+  const body = {
+    name: `Pedido #${id} - ${quantidade} Robux`,
+    description: `${NOME_LOJA} | Pedido #${id}`,
+    amount: valor,
+    gatewayMethod: 'PIX'
+  };
+  if (PUBLIC_URL) {
+    body.webhook = {
+      callbackURL: `${PUBLIC_URL}/sharpify-webhook`,
+      headers: [{ key: 'x-webhook-secret', value: WEBHOOK_SECRET }]
+    };
+  }
+  const res = await fetch(`${SHARPIFY_URL}/api/v1/gateway/payment/create-paymnet`, {
+    method: 'POST',
+    headers: sharpifyHeaders(),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15000)
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || !json.data) {
+    throw new Error(`Sharpify respondeu ${res.status}: ${JSON.stringify(json)}`);
+  }
+  return json.data; // PaymentLinkProps
+}
+
+async function consultarPagamento(linkId) {
+  const res = await fetch(
+    `${SHARPIFY_URL}/api/v1/gateway/payment/get-payment?paymentLinkId=${encodeURIComponent(linkId)}`,
+    { headers: sharpifyHeaders(), signal: AbortSignal.timeout(15000) }
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  return json.data || json;
+}
+
+// O QR Code pode vir como link, base64 (imagem) ou o próprio texto do Pix.
+function interpretarQr(qr) {
+  if (!qr || typeof qr !== 'string') return null;
+  if (/^https?:\/\//i.test(qr)) return { url: qr };
+  const b64 = qr.replace(/^data:image\/\w+;base64,/, '').replace(/\s/g, '');
+  if (b64.length > 200 && /^[A-Za-z0-9+/=]+$/.test(b64)) return { buffer: Buffer.from(b64, 'base64') };
+  return null;
+}
+
 // ---------- EMOJIS ----------
-// O bot procura os emojis pelo NOME no seu servidor (e nos emojis do aplicativo),
-// então não depende mais de IDs digitados à mão.
-// Nomes esperados no servidor: Robux, Pix, Cartao, Plus
 const EMOJI_NOMES = { ROBUX: 'Robux', MONEY: 'Robux', PIX: 'Pix', CARTAO: 'Cartao', PLUS: 'Plus' };
 const EMOJI_FALLBACK = { ROBUX: '🪙', MONEY: '🪙', PIX: '💠', CARTAO: '💳', PLUS: '⭐' };
 const emojiCache = {};
@@ -73,15 +145,61 @@ const emoji = (nome) => {
 };
 const comEmoji = (nome, texto) => `${emoji(nome)} ${texto}`;
 
-// Emoji para botões: objeto { id, name } ou o emoji padrão (unicode)
 const emojiBotao = (nome, fallback) => {
   const c = emojiCache[nome];
   return c ? { id: c.id, name: c.name, animated: c.animated } : fallback;
 };
 
-// ---------- BANCO DE DADOS (arquivo db.json) ----------
-const db = () => JSON.parse(fs.readFileSync('./db.json', 'utf8'));
-const save = (d) => fs.writeFileSync('./db.json', JSON.stringify(d, null, 2));
+// ---------- BANCO DE DADOS ----------
+// Com MONGODB_URI: os dados ficam no MongoDB (não somem quando o Render reinicia).
+// Sem MONGODB_URI: usa o db.json (só para testes no PC).
+// Os dados ficam em memória; db() lê rápido e save() grava no banco em segundo plano.
+let cache = null;
+let colecao = null;
+let gravando = Promise.resolve();
+
+const lerArquivo = () => JSON.parse(fs.readFileSync('./db.json', 'utf8'));
+
+async function iniciarBanco() {
+  if (!process.env.MONGODB_URI) {
+    cache = lerArquivo();
+    console.warn('ATENÇÃO: sem MONGODB_URI. Usando db.json, que é APAGADO quando o Render reinicia.');
+    return;
+  }
+  const { MongoClient } = require('mongodb');
+  const mongo = new MongoClient(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 15000 });
+  await mongo.connect();
+  colecao = mongo.db(process.env.MONGODB_DB || 'mgrobux').collection('loja');
+
+  const doc = await colecao.findOne({ _id: 'principal' });
+  if (doc) {
+    const { _id, ...dados } = doc;
+    cache = dados;
+    console.log('Banco: dados carregados do MongoDB.');
+  } else {
+    // Primeira vez: usa o db.json do GitHub como ponto de partida.
+    cache = lerArquivo();
+    await colecao.insertOne({ _id: 'principal', ...cache });
+    console.log('Banco: MongoDB estava vazio, criado a partir do db.json.');
+  }
+}
+
+const db = () => {
+  if (!cache) throw new Error('Banco ainda não carregou');
+  return structuredClone(cache);
+};
+
+const save = (d) => {
+  cache = d;
+  if (!colecao) {
+    fs.writeFileSync('./db.json', JSON.stringify(d, null, 2));
+    return;
+  }
+  const copia = structuredClone(d);
+  gravando = gravando
+    .then(() => colecao.replaceOne({ _id: 'principal' }, copia, { upsert: true }))
+    .catch((e) => console.error('FALHA ao gravar no MongoDB:', e.message));
+};
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -127,12 +245,10 @@ function painelEmbeds(d, temBanner) {
 
   const embeds = [];
 
-  // Embed 1: banner no topo
   if (temBanner) {
     embeds.push(new EmbedBuilder().setColor(COR_MARCA).setImage('attachment://banner.png'));
   }
 
-  // Embed 2: conteúdo
   const principal = new EmbedBuilder()
     .setColor(COR_MARCA)
     .setDescription(
@@ -141,7 +257,6 @@ function painelEmbeds(d, temBanner) {
       '-# Atendimento individual por ticket, do pedido até a entrega'
     );
 
-  // --- Formas de entrega ---
   principal.addFields(
     { name: '🚀  FORMAS DE ENTREGA', value: VAZIO, inline: false },
     {
@@ -156,12 +271,11 @@ function painelEmbeds(d, temBanner) {
     },
     {
       name: '💳  Pagamento',
-      value: `${P} Pix\n${C} Cartão`,
+      value: `${P} Pix automático`,
       inline: true
     }
   );
 
-  // --- Pacotes populares ---
   const populares = [1000, 5000, 10000].filter(q => q <= d.estoque);
   if (populares.length) {
     principal.addFields({ name: '🔥  PACOTES POPULARES', value: VAZIO, inline: false });
@@ -172,7 +286,6 @@ function painelEmbeds(d, temBanner) {
     }));
   }
 
-  // --- Melhor oferta ---
   const melhor = [100000, 50000].find(q => q <= d.estoque);
   if (melhor) {
     principal.addFields({
@@ -182,17 +295,15 @@ function painelEmbeds(d, temBanner) {
     });
   }
 
-  // --- Como funciona ---
   principal.addFields({
     name: '📋  COMO FUNCIONA',
     value:
       '**1.** Clique em **Comprar Robux**\n' +
       '**2.** Escolha a forma de entrega\n' +
-      '**3.** Pague e receba tudo pelo seu ticket',
+      '**3.** Pague o Pix gerado no seu ticket e receba por lá',
     inline: false
   });
 
-  // --- Informações ---
   principal.addFields({
     name: '🛡️  INFORMAÇÕES',
     value:
@@ -207,7 +318,6 @@ function painelEmbeds(d, temBanner) {
     .setFooter({ text: `${NOME_LOJA}  •  Compre pelo botão abaixo`, iconURL: client.user.displayAvatarURL() })
     .setTimestamp();
 
-  // Logo no canto, só se o bot tiver foto de perfil própria
   if (client.user.avatar) principal.setThumbnail(client.user.displayAvatarURL({ size: 256 }));
 
   embeds.push(principal);
@@ -323,12 +433,16 @@ function modalGamepass() {
     );
 }
 
-function botoesTicket(status, id) {
+// status: 'aguardando_pagamento' -> só cancelar (+ link de pagamento, se houver)
+//         'pago'                 -> confirmar entrega (staff) + cancelar
+function botoesTicket(status, id, linkPagamento) {
   const row = new ActionRowBuilder();
   if (status === 'aguardando_pagamento') {
-    row.addComponents(
-      new ButtonBuilder().setCustomId(`pago:${id}`).setLabel('Já paguei').setEmoji('💳').setStyle(ButtonStyle.Success)
-    );
+    if (linkPagamento && /^https?:\/\//i.test(linkPagamento)) {
+      row.addComponents(
+        new ButtonBuilder().setLabel('Abrir página de pagamento').setEmoji('💠').setStyle(ButtonStyle.Link).setURL(linkPagamento)
+      );
+    }
   } else {
     row.addComponents(
       new ButtonBuilder().setCustomId(`entregar:${id}`).setLabel('Confirmar entrega (staff)').setEmoji('✅').setStyle(ButtonStyle.Primary)
@@ -361,8 +475,7 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addNumberOption(o => o.setName('preco').setDescription('Preço por 1000 Robux via Gamepass (R$)').setMinValue(0.01))
     .addNumberOption(o => o.setName('preco_plus').setDescription('Preço por 1000 Robux via Roblox Plus (R$)').setMinValue(0.01))
-    .addIntegerOption(o => o.setName('estoque').setDescription('Estoque atual de Robux').setMinValue(0))
-    .addStringOption(o => o.setName('pix').setDescription('Chave Pix')),
+    .addIntegerOption(o => o.setName('estoque').setDescription('Estoque atual de Robux').setMinValue(0)),
 
   new SlashCommandBuilder()
     .setName('entregar')
@@ -370,6 +483,180 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addStringOption(o => o.setName('pedido').setDescription('Número do pedido, ex: 0001').setRequired(true))
 ].map(c => c.toJSON());
+
+// ---------- SERVIDOR WEB (mantém o Render vivo + recebe o webhook da Sharpify) ----------
+const servidor = http.createServer((req, res) => {
+  const rota = (req.url || '/').split('?')[0];
+
+  if (req.method === 'POST' && rota === '/sharpify-webhook') {
+    if (!segredoConfere(req.headers['x-webhook-secret'])) {
+      res.writeHead(401);
+      return res.end('unauthorized');
+    }
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > 1_000_000) req.destroy();
+    });
+    req.on('end', () => {
+      let depois = null;
+      try {
+        depois = processarWebhook(JSON.parse(raw));
+      } catch (e) {
+        console.error('Erro no webhook:', e);
+        res.writeHead(500);
+        return res.end('error'); // a Sharpify tenta de novo
+      }
+      res.writeHead(200);
+      res.end('ok');
+      if (depois) depois().catch((e) => console.error('Erro ao avisar no Discord:', e));
+    });
+    return;
+  }
+
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end('Bot online');
+});
+servidor.listen(process.env.PORT || 3000, () => console.log(`Servidor web na porta ${process.env.PORT || 3000}`));
+
+// Devolve uma função para rodar DEPOIS de responder 2xx à Sharpify
+// (ela espera no máximo 15s pela resposta e repete a entrega se demorar).
+function processarWebhook(payload) {
+  const nome = payload && payload.event && payload.event.name;
+  const link = payload && payload.data && payload.data.paymentLink;
+  if (!nome || !link) return null;
+  // O id do link também vem em event.contextId.
+  const dados = { ...link, id: link.id || payload.event.contextId };
+
+  if (nome === 'PAYMENT_LINK_APPROVED') {
+    const r = registrarAprovacao(dados);
+    return () => notificarAprovacao(r);
+  }
+  if (nome === 'PAYMENT_LINK_CANCELLED') {
+    const r = registrarCancelamento(dados);
+    return () => notificarCancelamento(r);
+  }
+  return null;
+}
+
+// ---------- PAGAMENTO CONFIRMADO / CANCELADO ----------
+// "registrar" só mexe no db.json (rápido, sem esperas). Por isso é seguro mesmo
+// se o webhook for repetido ou chegar junto com a consulta periódica.
+function registrarAprovacao(link) {
+  const d = db();
+  const id = Object.keys(d.pedidos).find(k => d.pedidos[k].paymentLinkId === link.id);
+  if (!id) return { tipo: 'sem_pedido', link };
+
+  const p = d.pedidos[id];
+  if (p.status === 'pago' || p.status === 'entregue') return null; // já tratado
+  if (p.status === 'cancelado') return { tipo: 'pedido_cancelado', id, p };
+
+  p.status = 'pago';
+  p.pagoEm = Date.now();
+  save(d);
+  return { tipo: 'ok', id, p };
+}
+
+async function notificarAprovacao(r) {
+  if (!r) return;
+
+  if (r.tipo === 'sem_pedido') {
+    await log(
+      '⚠️ Pagamento sem pedido correspondente',
+      `A Sharpify aprovou um pagamento que o bot não encontrou.\n**Link:** \`${r.link.id}\`\n**Nome:** ${r.link.name || 'sem nome'}\n**Valor:** ${r.link.payment ? reais(r.link.payment.amount) : 'desconhecido'}\nConfira em Transações na Sharpify e atenda o cliente manualmente.`,
+      COR_ERRO
+    );
+    return;
+  }
+
+  const { id, p } = r;
+
+  if (r.tipo === 'pedido_cancelado') {
+    await log(
+      `⚠️ Pagamento recebido de pedido cancelado | #${id}`,
+      `O cliente <@${p.userId}> pagou ${reais(p.valor)} depois do pedido ser cancelado.\nÉ preciso reembolsar ou refazer o pedido manualmente.`,
+      COR_ERRO
+    );
+    return;
+  }
+
+  const canal = await client.channels.fetch(p.canal).catch(() => null);
+  if (canal) {
+    if (p.mensagemId) {
+      const msg = await canal.messages.fetch(p.mensagemId).catch(() => null);
+      if (msg) await msg.edit({ components: [botoesTicket('pago', id)] }).catch(() => {});
+    }
+    const embed = new EmbedBuilder()
+      .setColor(COR_MARCA)
+      .setDescription(
+        '### ✅ Pagamento confirmado\n' +
+        `> O pagamento de **${reais(p.valor)}** foi aprovado automaticamente.\n` +
+        '-# Nossa equipe vai concluir a entrega em instantes.'
+      )
+      .setFooter({ text: `${NOME_LOJA}  |  Pedido #${id}` });
+    await canal.send({ content: `<@${p.userId}> <@&${process.env.STAFF_ROLE}>`, embeds: [embed] });
+  }
+
+  await log(
+    `Pagamento confirmado | Pedido #${id}`,
+    `**Comprador:** <@${p.userId}>\n**Valor:** ${reais(p.valor)}\n**Quantidade:** ${p.quantidade} Robux (${METODOS[p.metodo || 'gamepass']})\n**Canal:** <#${p.canal}>`
+  );
+}
+
+function registrarCancelamento(link) {
+  const d = db();
+  const id = Object.keys(d.pedidos).find(k => d.pedidos[k].paymentLinkId === link.id);
+  if (!id) return null;
+  const p = d.pedidos[id];
+  if (p.status !== 'aguardando_pagamento') return null;
+
+  p.status = 'cancelado';
+  save(d);
+  return { id, p };
+}
+
+async function notificarCancelamento(r) {
+  if (!r) return;
+  const { id, p } = r;
+
+  const canal = await client.channels.fetch(p.canal).catch(() => null);
+  if (canal) {
+    const embed = new EmbedBuilder()
+      .setColor(COR_ERRO)
+      .setDescription(
+        '### 🚫 Pagamento expirado ou cancelado\n' +
+        '-# Este canal será apagado em 15 segundos. Abra um novo pedido quando quiser.'
+      );
+    await canal.send({ content: `<@${p.userId}>`, embeds: [embed] }).catch(() => {});
+    setTimeout(() => canal.delete().catch(() => {}), 15_000);
+  }
+  await log(`Pedido #${id} cancelado (pagamento)`, `**Comprador:** <@${p.userId}>\nO link de pagamento expirou ou foi cancelado.`, COR_ERRO);
+}
+
+// Reserva: se o webhook não chegar (Render dormindo, por exemplo), consulta a Sharpify.
+let ultimoErroConsulta = '';
+async function verificarPendentes() {
+  let d;
+  try { d = db(); } catch { return; }
+  const limite = Date.now() - 24 * 60 * 60 * 1000;
+  const pendentes = Object.values(d.pedidos).filter(
+    p => p.status === 'aguardando_pagamento' && p.paymentLinkId && p.criadoEm > limite
+  );
+  for (const p of pendentes) {
+    try {
+      const link = await consultarPagamento(p.paymentLinkId);
+      const dados = { ...link, id: (link && link.id) || p.paymentLinkId };
+      if (link && link.status === 'APPROVED') await notificarAprovacao(registrarAprovacao(dados));
+      else if (link && link.status === 'CANCELLED') await notificarCancelamento(registrarCancelamento(dados));
+      ultimoErroConsulta = '';
+    } catch (e) {
+      if (e.message !== ultimoErroConsulta) {
+        console.error('Consulta de pagamento falhou:', e.message);
+        ultimoErroConsulta = e.message;
+      }
+    }
+  }
+}
 
 // ---------- REGISTRO ----------
 client.once(Events.ClientReady, async () => {
@@ -381,12 +668,11 @@ client.once(Events.ClientReady, async () => {
   console.log(`Online como ${client.user.tag}`);
   await carregarEmojis();
   console.log(fs.existsSync(CAMINHO_BANNER) ? `Banner encontrado: ${CAMINHO_BANNER}` : `ATENÇÃO: banner.png NÃO encontrado. Coloque em: ${CAMINHO_BANNER}`);
-  console.log('Emojis em uso:', {
-    ROBUX: emoji('ROBUX'),
-    PIX: emoji('PIX'),
-    CARTAO: emoji('CARTAO'),
-    PLUS: emoji('PLUS')
-  });
+  console.log(PUBLIC_URL
+    ? `Webhook da Sharpify: ${PUBLIC_URL}/sharpify-webhook`
+    : 'ATENÇÃO: sem URL pública (RENDER_EXTERNAL_URL/PUBLIC_URL). Só a consulta periódica vai confirmar pagamentos.');
+  verificarPendentes().catch(() => {});
+  setInterval(() => verificarPendentes().catch(() => {}), 30_000);
 });
 
 // ---------- INTERAÇÕES ----------
@@ -411,6 +697,7 @@ async function entregarPedido(id, staffId) {
   if (!p) return { ok: false, msg: 'Pedido não encontrado.' };
   if (p.status === 'entregue') return { ok: false, msg: 'Esse pedido já foi entregue.' };
   if (p.status === 'cancelado') return { ok: false, msg: 'Esse pedido foi cancelado.' };
+  if (p.status !== 'pago') return { ok: false, msg: 'O pagamento desse pedido ainda não foi confirmado.' };
   if (p.quantidade > d.estoque) return { ok: false, msg: 'Estoque insuficiente.' };
 
   const metodo = p.metodo || 'gamepass';
@@ -484,11 +771,26 @@ async function entregarPedido(id, staffId) {
 
 // ---------- CRIAR TICKET ----------
 async function criarTicket(i, q, metodo, usuarioRoblox) {
-  const d = db();
-  const valor = Math.round((q / 1000) * precoPor1000(d, metodo) * 100) / 100;
-  const numero = d.contador + 1;
+  const d0 = db();
+  const valor = Math.round((q / 1000) * precoPor1000(d0, metodo) * 100) / 100;
+  const numero = d0.contador + 1;
   const id = String(numero).padStart(4, '0');
 
+  // Reserva o número do pedido antes de qualquer espera.
+  d0.contador = numero;
+  save(d0);
+
+  // 1) Gera a cobrança Pix na Sharpify. Se falhar, nenhum canal é criado.
+  const link = await criarPagamento(id, valor, q);
+  const gw = (link.payment && link.payment.gateway && link.payment.gateway.data) || {};
+  const qr = interpretarQr(gw.qrCode);
+  const codigoPix = gw.code || (!qr && typeof gw.qrCode === 'string' ? gw.qrCode : null);
+  const urlPagamento = gw.paymentLink || null;
+  const expira = link.payment && link.payment.gateway && link.payment.gateway.expirationDate
+    ? Math.floor(new Date(link.payment.gateway.expirationDate).getTime() / 1000)
+    : null;
+
+  // 2) Cria o canal do ticket.
   const opcoesCanal = {
     name: `pedido-${id}`,
     type: ChannelType.GuildText,
@@ -505,17 +807,15 @@ async function criarTicket(i, q, metodo, usuarioRoblox) {
   try {
     canal = await i.guild.channels.create({ ...opcoesCanal, parent: process.env.CATEGORIA_TICKETS || null });
   } catch (e1) {
-    try {
-      canal = await i.guild.channels.create(opcoesCanal);
-    } catch (e2) {
-      throw e2;
-    }
+    canal = await i.guild.channels.create(opcoesCanal);
   }
 
-  d.contador = numero;
+  // 3) Salva o pedido ligado ao link de pagamento.
+  const d = db();
   d.pedidos[id] = {
     userId: i.user.id, quantidade: q, valor, canal: canal.id,
     metodo, usuarioRoblox: usuarioRoblox || null,
+    paymentLinkId: link.id,
     status: 'aguardando_pagamento', criadoEm: Date.now()
   };
   save(d);
@@ -530,17 +830,21 @@ async function criarTicket(i, q, metodo, usuarioRoblox) {
   if (metodo === 'plus') {
     dados.push(`> **Usuário no Roblox:** \`${usuarioRoblox}\``);
     passos =
-      '**1.** Faça o pagamento no valor exato indicado acima.\n' +
-      '**2.** Envie o comprovante neste canal.\n' +
-      '**3.** Clique em **Já paguei**. Após conferir o pagamento, nossa equipe enviará os Robux via Roblox Plus.';
+      '**1.** Pague o Pix acima (QR Code ou copia e cola).\n' +
+      '**2.** O pagamento é confirmado **automaticamente**, sem enviar comprovante.\n' +
+      '**3.** Após a confirmação, nossa equipe envia os Robux via Roblox Plus.';
   } else {
     dados.push(`> **Preço do gamepass:** ${precoGamepass(q).toLocaleString('pt-BR')} Robux`);
     passos =
-      '**1.** Faça o pagamento no valor exato indicado acima.\n' +
-      '**2.** Envie o comprovante neste canal.\n' +
+      '**1.** Pague o Pix acima (QR Code ou copia e cola).\n' +
+      '**2.** O pagamento é confirmado **automaticamente**, sem enviar comprovante.\n' +
       `**3.** Crie um gamepass de **${precoGamepass(q).toLocaleString('pt-BR')} Robux** no Roblox e envie o link neste canal.\n` +
-      '**4.** Clique em **Já paguei**. Após conferir o pagamento, nossa equipe comprará o seu gamepass.';
+      '**4.** Após a confirmação, nossa equipe comprará o seu gamepass.';
   }
+
+  const blocoPix = codigoPix
+    ? `**Pix copia e cola:**\n\`\`\`\n${codigoPix}\n\`\`\`\n`
+    : (urlPagamento ? '-# Use o botão **Abrir página de pagamento** abaixo.\n\n' : '-# Aguarde, o código Pix está sendo preparado. Se não aparecer, avise a equipe.\n\n');
 
   const embed = new EmbedBuilder()
     .setColor(COR_ESPERA)
@@ -550,15 +854,30 @@ async function criarTicket(i, q, metodo, usuarioRoblox) {
       `-# Olá, <@${i.user.id}>. Siga as etapas abaixo para concluir a sua compra.\n\n` +
       `${dados.join('\n')}\n\n` +
       `${LINHA}\n\n` +
-      `### ${comEmoji('PIX', 'Pagamento via Pix / Cartão')} ${emoji('CARTAO')}\n` +
-      `\`\`\`\n${d.pix}\n\`\`\`\n` +
+      `### ${comEmoji('PIX', 'Pagamento via Pix')}\n` +
+      blocoPix +
+      (expira ? `-# O Pix expira <t:${expira}:R>.\n\n` : '') +
       '### 📌 Próximos passos\n' +
       `${passos}\n\n` +
       '-# Nunca envie sua senha ou códigos de verificação. Nossa equipe __não__ solicita esses dados.'
     )
     .setFooter({ text: `${NOME_LOJA}  |  Pedido #${id}` });
 
-  await canal.send({ content: `<@${i.user.id}>`, embeds: [embed], components: [botoesTicket('aguardando_pagamento', id)] });
+  const envio = {
+    content: `<@${i.user.id}>`,
+    embeds: [embed],
+    components: [botoesTicket('aguardando_pagamento', id, urlPagamento)]
+  };
+  if (qr && qr.url) {
+    embed.setImage(qr.url);
+  } else if (qr && qr.buffer) {
+    embed.setImage('attachment://qrcode.png');
+    envio.files = [new AttachmentBuilder(qr.buffer, { name: 'qrcode.png' })];
+  }
+
+  const msg = await canal.send(envio);
+  const d2 = db();
+  if (d2.pedidos[id]) { d2.pedidos[id].mensagemId = msg.id; save(d2); }
 
   await log(
     `Pedido #${id} criado`,
@@ -601,12 +920,10 @@ async function handleCommand(i) {
     const preco = i.options.getNumber('preco');
     const precoPlus = i.options.getNumber('preco_plus');
     const estoque = i.options.getInteger('estoque');
-    const pix = i.options.getString('pix');
 
     if (preco !== null) d.precoPor1000 = preco;
     if (precoPlus !== null) d.precoPlusPor1000 = precoPlus;
     if (estoque !== null) d.estoque = estoque;
-    if (pix !== null) d.pix = pix;
     save(d);
 
     return i.reply({
@@ -614,7 +931,7 @@ async function handleCommand(i) {
         'Configurações atualizadas.\n' +
         `Preço por 1.000 (Gamepass): ${reais(d.precoPor1000)}\n` +
         `Preço por 1.000 (Roblox Plus): ${reais(precoPor1000(d, 'plus'))}\n` +
-        `Estoque: ${d.estoque}\nChave/Info Pix: ${d.pix}`,
+        `Estoque: ${d.estoque}`,
       flags: ephemeral
     });
   }
@@ -647,38 +964,14 @@ async function handleButton(i) {
     return i.showModal(modalCompra(id));
   }
 
+  // Botão antigo "Já paguei" (tickets criados antes da Sharpify)
+  if (acao === 'pago') {
+    return i.reply({ content: 'O pagamento agora é confirmado automaticamente. Aguarde alguns instantes.', flags: ephemeral });
+  }
+
   const d = db();
   const p = d.pedidos[id];
   if (!p) return i.reply({ content: 'Pedido não encontrado.', flags: ephemeral });
-
-  if (acao === 'pago') {
-    if (i.user.id !== p.userId) {
-      return i.reply({ content: 'Somente o comprador pode usar este botão.', flags: ephemeral });
-    }
-    if (p.status !== 'aguardando_pagamento') {
-      return i.reply({ content: 'Esse pedido já está em análise ou finalizado.', flags: ephemeral });
-    }
-    p.status = 'aguardando_confirmacao';
-    save(d);
-
-    await i.update({ components: [botoesTicket('aguardando_confirmacao', id)] });
-
-    const embed = new EmbedBuilder()
-      .setColor(COR_ESPERA)
-      .setDescription(
-        '### ⏳ Pagamento informado\n' +
-        `> O comprador informou o pagamento de **${reais(p.valor)}**.\n` +
-        '-# Nossa equipe irá conferir e concluir a entrega em breve.'
-      )
-      .setFooter({ text: `${NOME_LOJA}  |  Pedido #${id}` });
-    await i.channel.send({ content: `<@&${process.env.STAFF_ROLE}>`, embeds: [embed] });
-
-    return log(
-      `Pagamento informado | Pedido #${id}`,
-      `<@${p.userId}> informou o pagamento de **${reais(p.valor)}** (${p.quantidade} Robux, ${METODOS[p.metodo || 'gamepass']}).\n**Canal:** <#${p.canal}>`,
-      COR_ESPERA
-    );
-  }
 
   if (acao === 'entregar') {
     if (!ehStaff(i)) {
@@ -698,6 +991,9 @@ async function handleButton(i) {
     if (p.status === 'cancelado') {
       return i.reply({ content: 'Esse pedido já foi cancelado.', flags: ephemeral });
     }
+    if (p.status === 'pago' && !ehStaff(i)) {
+      return i.reply({ content: 'O pagamento já foi confirmado. Chame a equipe se precisar cancelar.', flags: ephemeral });
+    }
     p.status = 'cancelado';
     save(d);
 
@@ -705,7 +1001,8 @@ async function handleButton(i) {
       .setColor(COR_ERRO)
       .setDescription(
         '### 🚫 Pedido cancelado\n' +
-        '-# Este canal será apagado em 10 segundos.'
+        '-# Este canal será apagado em 10 segundos.\n' +
+        '-# Não pague o Pix deste pedido: ele foi cancelado.'
       );
     await i.reply({ embeds: [embed] });
 
@@ -753,7 +1050,7 @@ async function handleModal(i) {
     }
 
     const aberto = Object.values(d.pedidos).find(
-      p => p.userId === i.user.id && ['aguardando_pagamento', 'aguardando_confirmacao'].includes(p.status)
+      p => p.userId === i.user.id && ['aguardando_pagamento', 'aguardando_confirmacao', 'pago'].includes(p.status)
     );
     if (aberto) {
       return i.reply({ content: `Você já possui um pedido em aberto: <#${aberto.canal}>`, flags: ephemeral });
@@ -765,9 +1062,14 @@ async function handleModal(i) {
       return i.editReply(`Seu ticket foi criado: ${canal}`);
     } catch (err) {
       console.error('Erro ao criar o ticket:', err);
-      return i.editReply('Não foi possível abrir o seu ticket agora. Avise a equipe, por favor.');
+      return i.editReply('Não foi possível gerar o seu Pix agora. Tente de novo em instantes ou avise a equipe.');
     }
   }
 }
 
-client.login(process.env.TOKEN);
+iniciarBanco()
+  .then(() => client.login(process.env.TOKEN))
+  .catch((e) => {
+    console.error('Falha ao iniciar:', e.message);
+    process.exit(1);
+  });
