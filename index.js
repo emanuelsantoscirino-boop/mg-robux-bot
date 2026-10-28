@@ -1364,17 +1364,16 @@ async function handleModal(i) {
     }
   }
 }
-// Registra o comando /tabela apenas no seu servidor (Guild)
+// Registar o comando /tabela instantaneamente no teu servidor
 client.once('ready', async () => {
   try {
     const GUILD_ID = '1563680185994322033'; 
 
-    // Limpa comandos globais antigos para evitar duplicidade de /tabela
+    // Limpa comandos globais antigos para evitar duplicidade
     await client.application?.commands.set([]);
 
     const guild = await client.guilds.fetch(GUILD_ID);
     if (guild) {
-      // Registra apenas no seu servidor
       await guild.commands.set([
         {
           name: 'tabela',
@@ -1388,15 +1387,15 @@ client.once('ready', async () => {
   }
 });
 
-// Responde quando o comando /tabela for executado
+// Responder quando o comando /tabela for executado
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'tabela') {
-    // Adiciona o deferReply para evitar o erro "O aplicativo não respondeu"
+    // Evita a mensagem "O aplicativo não respondeu"
     await interaction.deferReply().catch(() => {});
 
-    // Verifica se o usuário é Administrador
+    // Verifica se o utilizador é Administrador
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.editReply({
         content: '❌ Apenas administradores podem usar este comando.'
@@ -1404,10 +1403,12 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // Busca os emojis diretamente no servidor pelo nome
-    const emojiRobux = interaction.guild.emojis.cache.find(e => e.name === 'Robux') || '🪙';
+    const emojiRobux = interaction.guild.emojis.cache.find(e => e.name === 'Robux');
     const emojiPix = interaction.guild.emojis.cache.find(e => e.name === 'Pix' || e.name === 'pix2') || '💎';
     const emojiRoblox = interaction.guild.emojis.cache.find(e => e.name === 'Roblox') || '🎮';
     const emojiMoney = interaction.guild.emojis.cache.find(e => e.name === 'Money') || '💵';
+
+    const robuxDisplay = emojiRobux || '🪙';
 
     const embedTabela = {
       color: 0x2ecc71,
@@ -1417,17 +1418,12 @@ client.on('interactionCreate', async (interaction) => {
         {
           name: '📊 Tabela de Valores',
           value: 
-            `• ${emojiRobux} **400 Robux** ── ${emojiPix} **R$ 14,00** *(Pedido Mínimo)*\n` +
-            
-            `• ${emojiRobux} **800 Robux** ── ${emojiPix} **R$ 28,00** *(Recomendado)*\n` +
-            
-            `• ${emojiRobux} **1.000 Robux** ── ${emojiPix} **R$ 35,00**\n` +
-            
-            `• ${emojiRobux} **2.000 Robux** ── ${emojiPix} **R$ 70,00**\n` +
-            
-            `• ${emojiRobux} **5.000 Robux** ── ${emojiPix} **R$ 175,00**\n` +
-            
-            `• ${emojiRobux} **10.000 Robux** ── ${emojiPix} **R$ 350,00**\n\n` +
+            `• ${robuxDisplay} **400 Robux** ── ${emojiPix} **R$ 14,00** *(Pedido Mínimo)*\n` +
+            `• ${robuxDisplay} **800 Robux** ── ${emojiPix} **R$ 28,00**\n` +
+            `• ${robuxDisplay} **1.000 Robux** ── ${emojiPix} **R$ 35,00**\n` +
+            `• ${robuxDisplay} **2.000 Robux** ── ${emojiPix} **R$ 70,00**\n` +
+            `• ${robuxDisplay} **5.000 Robux** ── ${emojiPix} **R$ 175,00**\n` +
+            `• ${robuxDisplay} **10.000 Robux** ── ${emojiPix} **R$ 350,00**\n\n` +
             `🧮 *Quer outra quantidade? Calculamos proporcionalmente (R$ 0,035 por Robux).*`
         },
         {
@@ -1435,7 +1431,7 @@ client.on('interactionCreate', async (interaction) => {
           value: 
             `1️⃣ Vá até o canal de tickets\n` +
             `2️⃣ Abra um ticket de atendimento\n` +
-            `3️⃣ Digite a quantidade de ${emojiRobux} que deseja e faça o pagamento via ${emojiPix}!`
+            `3️⃣ Digite a quantidade de ${robuxDisplay} que deseja e faça o pagamento via ${emojiPix}!`
         }
       ],
       image: {
@@ -1446,10 +1442,32 @@ client.on('interactionCreate', async (interaction) => {
       }
     };
 
-    // Envia o embed com o banner
+    const CANAL_ROBUX_ID = '1563682526386454699'; 
+
+    const buttonComponent = {
+      type: 2,
+      style: 5,
+      label: '🛒 Comprar Robux',
+      url: `https://discord.com/channels/${interaction.guild.id}/${CANAL_ROBUX_ID}`
+    };
+
+    if (emojiRobux) {
+      buttonComponent.emoji = {
+        id: emojiRobux.id,
+        name: emojiRobux.name,
+        animated: emojiRobux.animated
+      };
+    }
+
+    const row = {
+      type: 1,
+      components: [buttonComponent]
+    };
+
     await interaction.editReply({
       embeds: [embedTabela],
-      files: ['./banner.png']
+      files: ['./banner.png'],
+      components: [row]
     });
   }
 });
