@@ -1408,7 +1408,7 @@ client.on('interactionCreate', async (interaction) => {
     const robuxDisplay = emojiRobux || '🪙';
 
     const embedTabela = {
-      color: 0x2ecc71,
+      color: 0x000001,
       title: `${emojiRoblox} MG ROBUX — TABELA DE PREÇOS`,
       description: `> ${emojiMoney} **Valor base:** **R$ 35,00** a cada **1.000 Robux**!\n> ⚠️ **Pedido mínimo:** **400 Robux**`,
       fields: [
