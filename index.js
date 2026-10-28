@@ -1364,12 +1364,25 @@ async function handleModal(i) {
     }
   }
 }
-// Registra o comando /tabela e responde à interação
+// Registar o comando /tabela assim que o bot fica online
+client.once('ready', async () => {
+  try {
+    await client.application?.commands.create({
+      name: 'tabela',
+      description: 'Envia a tabela de preços de Robux no canal'
+    });
+    console.log('Comando /tabela registrado com sucesso!');
+  } catch (err) {
+    console.error('Erro ao registrar comando /tabela:', err);
+  }
+});
+
+// Responder quando o comando /tabela for executado
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'tabela') {
-    // Verifica se o usuário é Administrador
+    // Verifica se o utilizador é Administrador
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({
         content: '❌ Apenas administradores podem usar este comando.',
@@ -1408,21 +1421,7 @@ client.on('interactionCreate', async (interaction) => {
 ---
 ⚡ *Entrega rápida e 100% segura no seu :Roblox:*`;
 
-    // Responde ao comando enviando a tabela no canal
     await interaction.reply({ content: tabela });
-  }
-});
-
-// Registrar o comando Slash no Discord quando o bot ligar
-client.once('ready', async () => {
-  try {
-    await client.application?.commands.create({
-      name: 'tabela',
-      description: 'Envia a tabela de preços de Robux no canal'
-    });
-    console.log('Comando /tabela registrado com sucesso!');
-  } catch (err) {
-    console.error('Erro ao registrar comando /tabela:', err);
   }
 });
 
