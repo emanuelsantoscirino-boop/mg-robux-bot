@@ -115,8 +115,8 @@ function interpretarQr(qr) {
 }
 
 // ---------- EMOJIS ----------
-const EMOJI_NOMES = { ROBUX: 'Robux', MONEY: 'Robux', PIX: 'Pix', CARTAO: 'Cartao', PLUS: 'Plus' };
-const EMOJI_FALLBACK = { ROBUX: '🪙', MONEY: '🪙', PIX: '💠', CARTAO: '💳', PLUS: '⭐' };
+const EMOJI_NOMES = { ROBUX: 'Robux', MONEY: 'Robux', PIX: 'Pix', CARTAO: 'Cartao', PLUS: 'Plus', GAMEPASS: 'gamepass' };
+const EMOJI_FALLBACK = { ROBUX: '🪙', MONEY: '🪙', PIX: '💠', CARTAO: '💳', PLUS: '⭐', GAMEPASS: '🎮' };
 const emojiCache = {};
 
 async function carregarEmojis() {
@@ -220,6 +220,34 @@ const agora = () => `<t:${Math.floor(Date.now() / 1000)}:f>`;
 const precoPor1000 = (d, metodo) =>
   metodo === 'plus' && typeof d.precoPlusPor1000 === 'number' ? d.precoPlusPor1000 : d.precoPor1000;
 
+// ---------- CUPONS ----------
+// d.cupons = { CODIGO: { tipo: 'percentual' | 'fixo', valor, usosMax (0 = ilimitado), usos, expiraEm, criadoPor, criadoEm } }
+const VALOR_MINIMO_PIX = 1; // o Pix nunca fica abaixo de R$ 1,00
+const arredondar = (n) => Math.round(n * 100) / 100;
+const normalizarCupom = (t) => String(t || '').trim().toUpperCase().replace(/\s+/g, '');
+const descricaoCupom = (c) => (c.tipo === 'percentual' ? `${c.valor}%` : reais(c.valor));
+
+function validarCupom(d, codigo) {
+  const c = d.cupons && d.cupons[codigo];
+  if (!c) return { ok: false, msg: 'Cupom inválido. Confira o código e tente de novo.' };
+  if (c.expiraEm && Date.now() > c.expiraEm) return { ok: false, msg: 'Esse cupom já expirou.' };
+  if (c.usosMax > 0 && c.usos >= c.usosMax) return { ok: false, msg: 'Esse cupom atingiu o limite de usos.' };
+  return { ok: true, cupom: c };
+}
+
+function aplicarDesconto(valor, c) {
+  let desc = c.tipo === 'percentual' ? valor * (c.valor / 100) : c.valor;
+  desc = Math.max(0, Math.min(desc, valor - VALOR_MINIMO_PIX));
+  desc = arredondar(desc);
+  return { desconto: desc, final: arredondar(valor - desc) };
+}
+
+// Devolve o uso do cupom quando o pedido é cancelado.
+function liberarCupom(d, p) {
+  const c = p.cupom && d.cupons && d.cupons[p.cupom];
+  if (c && c.usos > 0) c.usos -= 1;
+}
+
 async function log(titulo, descricao, cor = COR_MARCA) {
   try {
     const canal = await client.channels.fetch(process.env.LOG_CHANNEL);
@@ -242,6 +270,7 @@ function painelEmbeds(d, temBanner) {
   const P = emoji('PIX');
   const C = emoji('CARTAO');
   const PL = emoji('PLUS');
+  const GP = emoji('GAMEPASS');
 
   const plus = precoPor1000(d, 'plus');
   const gp = precoPor1000(d, 'gamepass');
@@ -267,17 +296,17 @@ function painelEmbeds(d, temBanner) {
     { name: '🚀  FORMAS DE ENTREGA', value: VAZIO, inline: false },
     {
       name: `${PL}  Roblox Plus`,
-      value: `✨ **Envio direto**\n> Sem taxa de transação\n-# ⚠️ Limite de ${LIMITE_PLUS} Robux/dia`,
+      value: `**Envio direto**\n> Sem taxa de transação\n-# ⚠️ Limite de ${LIMITE_PLUS} Robux/dia`,
       inline: true
     },
     {
-      name: '🎟️  Gamepass',
-      value: '🎟️ **Sem limite diário**\n> Você cria, nós compramos\n-# Taxa de 30% inclusa',
+      name: `${GP}  Gamepass`,
+      value: '**Sem limite diário**\n> Você cria, nós compramos\n-# Taxa de 30% inclusa',
       inline: true
     },
     {
-      name: '💳  Pagamento',
-      value: `${P} Pix automático`,
+      name: `${P}  Pagamento`,
+      value: '**Pix automático**\n> Aprovação em instantes\n-# Sem enviar comprovante',
       inline: true
     }
   );
@@ -356,7 +385,7 @@ function escolhaMetodoEmbed() {
       `**Roblox Plus** ${emoji('PLUS')}\n` +
       '> Envio direto para a sua conta, sem taxa de transação.\n' +
       `> ⚠️ **Limite diário de envio: ${LIMITE_PLUS} Robux por dia.** Pedidos via Plus podem ter no máximo ${LIMITE_PLUS} Robux.\n\n` +
-      '**Gamepass**\n' +
+      `**Gamepass** ${emoji('GAMEPASS')}\n` +
       '> Você cria um gamepass e nossa equipe o compra. A taxa de 30% do Roblox já é considerada no valor do gamepass.'
     );
 }
@@ -364,7 +393,7 @@ function escolhaMetodoEmbed() {
 function escolhaMetodoBotoes() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('metodo:plus').setLabel('Roblox Plus').setEmoji(emojiBotao('PLUS', '⭐')).setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('metodo:gamepass').setLabel('Gamepass').setEmoji('🎟️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('metodo:gamepass').setLabel('Gamepass').setEmoji(emojiBotao('GAMEPASS', '🎮')).setStyle(ButtonStyle.Secondary)
   );
 }
 
@@ -424,6 +453,17 @@ function modalCompra(metodo) {
       )
     );
   }
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('cupom')
+        .setLabel('Cupom de desconto (opcional)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Deixe em branco se não tiver')
+        .setRequired(false)
+        .setMaxLength(20)
+    )
+  );
   return modal;
 }
 
@@ -490,6 +530,27 @@ const commands = [
     .addNumberOption(o => o.setName('preco').setDescription('Preço por 1000 Robux via Gamepass (R$)').setMinValue(0.01))
     .addNumberOption(o => o.setName('preco_plus').setDescription('Preço por 1000 Robux via Roblox Plus (R$)').setMinValue(0.01))
     .addIntegerOption(o => o.setName('estoque').setDescription('Estoque atual de Robux').setMinValue(0)),
+
+  new SlashCommandBuilder()
+    .setName('cupom')
+    .setDescription('[STAFF] Gerencia os cupons de desconto')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addSubcommand(s => s
+      .setName('criar')
+      .setDescription('Cria um cupom de desconto')
+      .addStringOption(o => o.setName('codigo').setDescription('Código do cupom, ex: PROMO10').setRequired(true).setMaxLength(20))
+      .addStringOption(o => o.setName('tipo').setDescription('Tipo de desconto').setRequired(true)
+        .addChoices({ name: 'Porcentagem (%)', value: 'percentual' }, { name: 'Valor fixo (R$)', value: 'fixo' }))
+      .addNumberOption(o => o.setName('valor').setDescription('Quanto de desconto (% ou R$, conforme o tipo)').setRequired(true).setMinValue(0.01))
+      .addIntegerOption(o => o.setName('usos').setDescription('Limite de usos (0 ou vazio = ilimitado)').setMinValue(0))
+      .addIntegerOption(o => o.setName('validade_dias').setDescription('Validade em dias (vazio = sem validade)').setMinValue(1)))
+    .addSubcommand(s => s
+      .setName('remover')
+      .setDescription('Remove um cupom')
+      .addStringOption(o => o.setName('codigo').setDescription('Código do cupom').setRequired(true)))
+    .addSubcommand(s => s
+      .setName('listar')
+      .setDescription('Lista os cupons cadastrados')),
 
   new SlashCommandBuilder()
     .setName('entregar')
@@ -667,6 +728,7 @@ function registrarCancelamento(link) {
   const p = d.pedidos[id];
   if (p.status !== 'aguardando_pagamento') return null;
 
+  liberarCupom(d, p);
   p.status = 'cancelado';
   save(d);
   return { id, p };
@@ -827,9 +889,18 @@ async function entregarPedido(id, staffId) {
 }
 
 // ---------- CRIAR TICKET ----------
-async function criarTicket(i, q, metodo, usuarioRoblox) {
+async function criarTicket(i, q, metodo, usuarioRoblox, cupomCodigo) {
   const d0 = db();
-  const valor = Math.round((q / 1000) * precoPor1000(d0, metodo) * 100) / 100;
+  const valorBase = arredondar((q / 1000) * precoPor1000(d0, metodo));
+  let valor = valorBase;
+  let desconto = 0;
+  if (cupomCodigo) {
+    const v = validarCupom(d0, cupomCodigo);
+    if (!v.ok) throw new Error(`CUPOM:${v.msg}`);
+    const r = aplicarDesconto(valorBase, v.cupom);
+    valor = r.final;
+    desconto = r.desconto;
+  }
   const numero = d0.contador + 1;
   const id = String(numero).padStart(4, '0');
 
@@ -873,13 +944,16 @@ async function criarTicket(i, q, metodo, usuarioRoblox) {
     userId: i.user.id, quantidade: q, valor, canal: canal.id,
     metodo, usuarioRoblox: usuarioRoblox || null,
     paymentLinkId: link.id,
+    cupom: cupomCodigo || null, valorOriginal: valorBase, desconto,
     status: 'aguardando_pagamento', criadoEm: Date.now()
   };
+  if (cupomCodigo && d.cupons && d.cupons[cupomCodigo]) d.cupons[cupomCodigo].usos += 1;
   save(d);
 
   const dados = [
     `> **Quantidade:** ${comEmoji('ROBUX', `${q.toLocaleString('pt-BR')} Robux`)}`,
     `> **Valor a pagar:** ${reais(valor)}`,
+    ...(cupomCodigo ? [`> **Cupom:** \`${cupomCodigo}\` (-${reais(desconto)})`] : []),
     `> **Forma de entrega:** ${METODOS[metodo]}${metodo === 'plus' ? ` (limite de ${LIMITE_PLUS} Robux por dia)` : ''}`
   ];
 
@@ -939,7 +1013,7 @@ async function criarTicket(i, q, metodo, usuarioRoblox) {
   await log(
     `Pedido #${id} criado`,
     `**Comprador:** <@${i.user.id}>\n**Quantidade:** ${q} Robux\n**Forma de entrega:** ${METODOS[metodo]}\n` +
-    `${metodo === 'plus' ? `**Usuário Roblox:** ${usuarioRoblox}\n` : ''}**Valor:** ${reais(valor)}\n**Canal:** ${canal}`,
+    `${metodo === 'plus' ? `**Usuário Roblox:** ${usuarioRoblox}\n` : ''}**Valor:** ${reais(valor)}\n${cupomCodigo ? `**Cupom:** ${cupomCodigo} (-${reais(desconto)})\n` : ''}**Canal:** ${canal}`,
     COR_ESPERA
   );
 
@@ -991,6 +1065,79 @@ async function handleCommand(i) {
         `Estoque: ${d.estoque}`,
       flags: ephemeral
     });
+  }
+
+  if (i.commandName === 'cupom') {
+    if (!ehStaff(i)) {
+      return i.reply({ content: 'Somente a equipe pode usar este comando.', flags: ephemeral });
+    }
+    d.cupons = d.cupons || {};
+    const sub = i.options.getSubcommand();
+
+    if (sub === 'criar') {
+      const codigo = normalizarCupom(i.options.getString('codigo'));
+      const tipo = i.options.getString('tipo');
+      const valor = i.options.getNumber('valor');
+      const usosMax = i.options.getInteger('usos') ?? 0;
+      const dias = i.options.getInteger('validade_dias');
+
+      if (!/^[A-Z0-9_-]{3,20}$/.test(codigo)) {
+        return i.reply({ content: 'Código inválido. Use de 3 a 20 caracteres: letras, números, hífen ou underline.', flags: ephemeral });
+      }
+      if (d.cupons[codigo]) {
+        return i.reply({ content: `O cupom \`${codigo}\` já existe. Remova-o antes de criar de novo.`, flags: ephemeral });
+      }
+      if (tipo === 'percentual' && valor > 100) {
+        return i.reply({ content: 'A porcentagem não pode passar de 100.', flags: ephemeral });
+      }
+
+      d.cupons[codigo] = {
+        tipo, valor, usosMax, usos: 0,
+        expiraEm: dias ? Date.now() + dias * 24 * 60 * 60 * 1000 : null,
+        criadoPor: i.user.id, criadoEm: Date.now()
+      };
+      save(d);
+
+      await log(
+        `Cupom criado | ${codigo}`,
+        `**Desconto:** ${descricaoCupom(d.cupons[codigo])}\n**Limite de usos:** ${usosMax || 'ilimitado'}\n**Validade:** ${dias ? `${dias} dia(s)` : 'sem validade'}\n**Criado por:** <@${i.user.id}>`
+      );
+      return i.reply({
+        content:
+          `Cupom \`${codigo}\` criado.\n` +
+          `Desconto: ${descricaoCupom(d.cupons[codigo])}\n` +
+          `Limite de usos: ${usosMax || 'ilimitado'}\n` +
+          `Validade: ${dias ? `${dias} dia(s)` : 'sem validade'}`,
+        flags: ephemeral
+      });
+    }
+
+    if (sub === 'remover') {
+      const codigo = normalizarCupom(i.options.getString('codigo'));
+      if (!d.cupons[codigo]) {
+        return i.reply({ content: 'Cupom não encontrado.', flags: ephemeral });
+      }
+      delete d.cupons[codigo];
+      save(d);
+      await log(`Cupom removido | ${codigo}`, `**Removido por:** <@${i.user.id}>`, COR_ERRO);
+      return i.reply({ content: `Cupom \`${codigo}\` removido.`, flags: ephemeral });
+    }
+
+    if (sub === 'listar') {
+      const lista = Object.entries(d.cupons);
+      if (!lista.length) {
+        return i.reply({ content: 'Nenhum cupom cadastrado.', flags: ephemeral });
+      }
+      const linhas = lista.map(([codigo, c]) => {
+        const usos = `${c.usos}/${c.usosMax || '∞'} usos`;
+        const validade = c.expiraEm
+          ? (Date.now() > c.expiraEm ? 'expirado' : `expira <t:${Math.floor(c.expiraEm / 1000)}:R>`)
+          : 'sem validade';
+        return `\`${codigo}\` • ${descricaoCupom(c)} • ${usos} • ${validade}`;
+      });
+      return i.reply({ content: linhas.join('\n').slice(0, 1900), flags: ephemeral });
+    }
+    return;
   }
 
   if (i.commandName === 'entregar') {
@@ -1063,6 +1210,7 @@ async function handleButton(i) {
     if (p.status === 'pago' && !ehStaff(i)) {
       return i.reply({ content: 'O pagamento já foi confirmado. Chame a equipe se precisar cancelar.', flags: ephemeral });
     }
+    liberarCupom(d, p);
     p.status = 'cancelado';
     save(d);
 
@@ -1124,6 +1272,14 @@ async function handleModal(i) {
       }
     }
 
+    let cupomTxt = '';
+    try { cupomTxt = i.fields.getTextInputValue('cupom'); } catch { /* campo ausente */ }
+    const cupom = normalizarCupom(cupomTxt);
+    if (cupom) {
+      const v = validarCupom(d, cupom);
+      if (!v.ok) return i.reply({ content: v.msg, flags: ephemeral });
+    }
+
     const aberto = Object.values(d.pedidos).find(
       p => p.userId === i.user.id && ['aguardando_pagamento', 'aguardando_confirmacao', 'pago'].includes(p.status)
     );
@@ -1133,9 +1289,12 @@ async function handleModal(i) {
 
     await i.deferReply({ flags: ephemeral });
     try {
-      const canal = await criarTicket(i, q, metodo, usuario);
+      const canal = await criarTicket(i, q, metodo, usuario, cupom || null);
       return i.editReply(`Seu ticket foi criado: ${canal}`);
     } catch (err) {
+      if (String(err.message).startsWith('CUPOM:')) {
+        return i.editReply(err.message.slice(6));
+      }
       console.error('Erro ao criar o ticket:', err);
       return i.editReply('Não foi possível gerar o seu Pix agora. Tente de novo em instantes ou avise a equipe.');
     }
