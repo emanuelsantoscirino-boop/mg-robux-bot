@@ -280,10 +280,6 @@ function painelEmbeds(d, temBanner) {
 
   const embeds = [];
 
-  if (temBanner) {
-    embeds.push(new EmbedBuilder().setColor(COR_MARCA).setImage('attachment://banner.png'));
-  }
-
   const principal = new EmbedBuilder()
     .setColor(COR_MARCA)
     .setDescription(
@@ -355,6 +351,9 @@ function painelEmbeds(d, temBanner) {
     .setTimestamp();
 
   if (client.user.avatar) principal.setThumbnail(client.user.displayAvatarURL({ size: 256 }));
+
+  // O banner fica no fim do mesmo embed (mesma mensagem, sem separação).
+  if (temBanner) principal.setImage('attachment://banner.png');
 
   embeds.push(principal);
   return embeds;
