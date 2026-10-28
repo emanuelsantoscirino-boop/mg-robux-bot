@@ -1385,7 +1385,7 @@ client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'tabela') {
-    // Verifica se o utilizador é Administrador
+    // Verifica se o usuário é Administrador
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({
         content: '❌ Apenas administradores podem usar este comando.',
@@ -1400,8 +1400,8 @@ client.on('interactionCreate', async (interaction) => {
     const emojiMoney = interaction.guild.emojis.cache.find(e => e.name === 'Money') || '💵';
 
     const embedTabela = {
-      color: 0x2ecc71, // Cor verde da barra lateral (estilo do teu print)
-      title: `${emojiRoblox} TABELA DE PREÇOS — ROBUX`,
+      color: 0x2ecc71, // Cor verde da barra lateral (estilo do seu print)
+      title: `${emojiRoblox} MG ROBUX — TABELA DE PREÇOS`,
       description: `> ${emojiMoney} **Valor base:** **R$ 35,00** a cada **1.000 Robux**!\n> ⚠️ **Pedido mínimo:** **400 Robux**`,
       fields: [
         {
@@ -1423,19 +1423,18 @@ client.on('interactionCreate', async (interaction) => {
             `3️⃣ Digite a quantidade de ${emojiRobux} que deseja e faça o pagamento via ${emojiPix}!`
         }
       ],
+      image: {
+        url: 'attachment://banner.png'
+      },
       footer: {
         text: '⚡ Entrega rápida e 100% segura no seu Roblox'
       }
     };
 
-    // Envia a mensagem formatada como Embed
-    await interaction.reply({ embeds: [embedTabela] });
+    // Envia o Embed com o banner anexado no rodapé do mesmo card
+    await interaction.reply({
+      embeds: [embedTabela],
+      files: ['./banner.png']
+    });
   }
 });
-
-iniciarBanco()
-  .then(() => client.login(process.env.TOKEN))
-  .catch((e) => {
-    console.error('Falha ao iniciar:', e.message);
-    process.exit(1);
-  });
