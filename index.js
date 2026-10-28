@@ -347,7 +347,7 @@ function painelEmbeds(d, temBanner) {
   const embeds = [];
 
   const principal = new EmbedBuilder()
-    .setColor(COR_MARCA)
+    .setColor('000001')
     .setDescription(
       `# ${R}  ${NOME_LOJA}\n` +
       '### Compre Robux com segurança\n' +
