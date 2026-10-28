@@ -1418,10 +1418,15 @@ client.on('interactionCreate', async (interaction) => {
           name: '📊 Tabela de Valores',
           value: 
             `• ${emojiRobux} **400 Robux** ── ${emojiPix} **R$ 14,00** *(Pedido Mínimo)*\n` +
-            `• ${emojiRobux} **800 Robux** ── ${emojiPix} **R$ 28,00**\n` +
+            
+            `• ${emojiRobux} **800 Robux** ── ${emojiPix} **R$ 28,00** *(Recomendado)*\n` +
+            
             `• ${emojiRobux} **1.000 Robux** ── ${emojiPix} **R$ 35,00**\n` +
+            
             `• ${emojiRobux} **2.000 Robux** ── ${emojiPix} **R$ 70,00**\n` +
+            
             `• ${emojiRobux} **5.000 Robux** ── ${emojiPix} **R$ 175,00**\n` +
+            
             `• ${emojiRobux} **10.000 Robux** ── ${emojiPix} **R$ 350,00**\n\n` +
             `🧮 *Quer outra quantidade? Calculamos proporcionalmente (R$ 0,035 por Robux).*`
         },
