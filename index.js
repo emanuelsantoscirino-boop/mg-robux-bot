@@ -1366,10 +1366,11 @@ async function handleModal(i) {
 }
 // COMANDO TABELA DE PREÇOS (NÃO ALTERA NADA DO SEU CÓDIGO)
 client.on('messageCreate', async (message) => {
-  if (message.content === '!enviartabela') {
+  // Aceita tanto ;enviartabela como !enviartabela
+  if (message.content === ';enviartabela' || message.content === '!enviartabela') {
     if (!message.member.permissions.has('Administrator')) return;
     
-const tabela = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const tabela = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # :Roblox: TABELA DE PREÇOS — ROBUX :Robux:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
