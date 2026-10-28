@@ -1364,12 +1364,19 @@ async function handleModal(i) {
     }
   }
 }
-// COMANDO TABELA DE PREÇOS (NÃO ALTERA NADA DO SEU CÓDIGO)
-client.on('messageCreate', async (message) => {
-  // Aceita tanto ;enviartabela como !enviartabela
-  if (message.content === ';enviartabela' || message.content === '!enviartabela') {
-    if (!message.member.permissions.has('Administrator')) return;
-    
+// Registra o comando /tabela e responde à interação
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'tabela') {
+    // Verifica se o usuário é Administrador
+    if (!interaction.member.permissions.has('Administrator')) {
+      return interaction.reply({
+        content: '❌ Apenas administradores podem usar este comando.',
+        ephemeral: true
+      });
+    }
+
     const tabela = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # :Roblox: TABELA DE PREÇOS — ROBUX :Robux:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1394,15 +1401,28 @@ client.on('messageCreate', async (message) => {
 
 ### 🛒 Como Comprar?
 
-1️⃣ Vá até o canal robux
+1️⃣ Vá até o canal de tickets
 2️⃣ Abra um ticket de atendimento
 3️⃣ Digite a quantidade de :Robux: que deseja e faça o pagamento via :Pix:!
 
 ---
 ⚡ *Entrega rápida e 100% segura no seu :Roblox:*`;
 
-    await message.delete().catch(() => {});
-    await message.channel.send(tabela);
+    // Responde ao comando enviando a tabela no canal
+    await interaction.reply({ content: tabela });
+  }
+});
+
+// Registrar o comando Slash no Discord quando o bot ligar
+client.once('ready', async () => {
+  try {
+    await client.application?.commands.create({
+      name: 'tabela',
+      description: 'Envia a tabela de preços de Robux no canal'
+    });
+    console.log('Comando /tabela registrado com sucesso!');
+  } catch (err) {
+    console.error('Erro ao registrar comando /tabela:', err);
   }
 });
 
